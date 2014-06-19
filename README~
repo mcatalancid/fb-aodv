@@ -1,0 +1,98 @@
+Flow-Based AODV (FB-AODV) routing protocol with Weighted Contention and Interference routing Metric (WCIM)
+Miguel Catalán Cid
+Wireless Network Group (WNG) - Univesitat Politecnica de Catalunya (UPC)
+http://genweb.upc.edu/wireless
+------------------------------------------------
+Plese, use start-aodv.sh for routing protocol module initilization
+
+FLOW-BASED ROUTING:
+-In FB-AODV, routes are based on flows. Each unique flow is determined by a source, a destination and a ToS. The available ToS are defined and can be modified in tos.c. 
+
+-Kernel r outing is based on Routing Policiy DataBase (RPDB). IP RULES are used in order to point each source to a routing table (up to 255). In each routing table, the routes for the different flows from a unique source are defined. 
+Default routes from the Internet are created in the main route table. 
+
+- For control or debug purposes, it is possible to route flows without ToS (i.e. 0x00) between neighbors (RREQ-RREP messages are not used).
+ 
+- In order to route flows, it is needed to use iptables MANGLE. Usual linux kernels support only eight different ToS or DSCP:
+TOS: 0x00, 0x04, 0x08, 0x10
+Example: itpables -t mangle -A OUTPUT -p ICMP -j TOS --set-tos 0x10
+TOS (DSCP): 0x0c (0x03), 0x14 (0x05), 0x18 (0x06), 0x1C (0x07) - 
+Example: iptables -t mangle -A OUTPUT -p UDP --dport 1234 -j DSCP --set-dscp 0x03
+
+
+
+GATEWAYS AND INTERNET:
+
+-The routing protocol supports multiple gateways. A gateway should start the kernel module with the option aodv_gateway = 1. It announces itself using ST-RREQ messages (based on AODV-ST). The receivers select a gateway as default by means of the minimum routing metric (Hop Count or ETT).
+
+-Access Point and Gateways should apply NAT
+
+-A gateway cannot be an intermediate node in a route to the Internet through another Gateway. 
+
+
+
+
+ROUTING METRICS:
+-The routing protocol implements three different routing metrics: Hop count, ETT (link quality aware) and WCIM (link quality, interference and load aware).
+
+-ETT and WCIM require link quality estimations. Error rate estimation is based on Hello's exchange (like ETX metric). Nominal rate estimation is based on Packet-Pair messages (like WCETT metric). If the rates are fixed, packet-pair messages can be deactivated.
+
+-WCIM metric needs load computation (based on the ToS of the flows) and load information exchange (using the Hello messages)
+
+
+
+PROC FILESYSTEM:
+/proc/fbaodv
+It prints a lot of information about the routing protocol procedures: timers, routes, neighbors, link quality estimations...
+
+--------------------------------------------
+
+aodv.h - All definitions (timers, messages and structures)
+
+aodv_dev - Handles initalizing the device you want to have AODV use.
+aodv_neigh - Handles neighboring nodes. A neighboring node is one that is one hop away. If we lose communication we know there is a link break. Creating of one-hop routes between neighbors for control purposes
+
+aodv_neigh_2h – WCIM needs information about two-hop neighbors. They are discovered by means of the Hello messages
+
+aodv_route - Everything needed for routes to other nodes. 
+
+aodv_thread - This is the process that handles all the task. It is a loop that pulls tasks out of the queue and then sends them to the right function.
+
+fbaodv_protocol - This is used when the module gets load and unload. All of the queues get initalized here. The proc filesystem is created here and netfilters are started and stopped.
+
+gw_list – Maintenance  of the discovered gateways. Default gateway selection
+
+hello - Handles the sending and receiving of Hello messages. The sending of Hello messages is triggered by a timer. Neighbors (one- and two-hops) discovering. ETX computation.
+
+packet_in - Incoming packets are handled here. If the packet has the AODV port number it goes through other processing.
+
+packet_out - All outgoing packets go through here. If they are not broadcast packets, AODV will check to see if there is a route to the destination in the AODV routing table. Packets with both source and destination external to the mesh network, are accepted (NF_ACCEPT). The rest are routed according to FB-AODV. If a route exists, are accepted. If not, they are queued during route discovering. Packet without a supported ToS or arriving to an intermediate node without an active route, are discarded. 
+
+packet_queue – It handles the queuing  and awaking of packets during a route discovery. 
+
+probe_ett – It handles the packet-pair mechanism if ETT or WCIM metric are used (and rate is not fixed)
+
+rerr - Handles the creation and processing of route error messages. Route error messages get built based upon a broken link. Any link that uses this link as a next hop gets added into the Route error message and unicast it to the source.
+
+route_alg – ETT and WCIM metric computation
+
+rpdb – It handles the RPDB using RTNETLINK sockets. Rules and route tables.
+
+rrep - Handles the RREP packets which contain new routes.
+
+rreq - When you don't have a route you send out a RREQ.
+
+socket - Socket used for FB-AODV signaling messages. 
+
+src_list – It handles the table of sources with active flows 
+
+st_rreq – Gateway announcement and discovery
+
+task_queue - All major proccessing that needs to be done is  placedinto the task queue. 
+
+timer_queue - There is a queue of task that is ordered by the time they should be started. A timer is set to go off when the first taskis due. That task then gets passed off to the AODV thread.
+
+tos – Definition of supported ToS: average packet size and rate
+
+utils - If you can not find a function anywhere else, it is probably here.
+
